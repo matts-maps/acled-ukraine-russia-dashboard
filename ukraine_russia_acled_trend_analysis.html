@@ -136,6 +136,18 @@ body{font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
         </select>
       </div>
       <div class="filter-group">
+        <!-- Country is the same underlying filter as Region above, kept
+             deliberately in sync -- see dashboard_template.html's matching
+             comment for why (two entry points to one concept, not two
+             independently-combinable filters that could conflict). -->
+        <label for="f-country">Country</label>
+        <select id="f-country" onchange="ta.setRegion(this.value)">
+          <option value="all">All</option>
+          <option value="Russia">Russia</option>
+          <option value="Ukraine">Ukraine</option>
+        </select>
+      </div>
+      <div class="filter-group">
         <label for="f-type">Event type</label>
         <select id="f-type" onchange="ta.setType(this.value)">
           <option value="all">All</option>
@@ -633,6 +645,7 @@ class TrendAnalysis{
   }
   syncControls(){
     document.getElementById('f-region').value=this.state.region;
+    document.getElementById('f-country').value=this.state.region;
     document.getElementById('f-type').value=this.state.type;
     document.getElementById('f-granularity').value=this.state.granularity;
   }
