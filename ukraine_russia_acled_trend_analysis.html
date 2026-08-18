@@ -128,20 +128,21 @@ body{font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
   <div class="toolbar">
     <div class="filters">
       <div class="filter-group">
-        <label for="f-region">Region</label>
-        <select id="f-region" onchange="ta.setRegion(this.value)">
+        <!-- Country is the PARENT of Region in a standard cascading-select
+             relationship -- see dashboard_template.html's matching comment
+             (setCountry()/setRegion()) for the full rationale: Region alone
+             still does 100% of the actual EVENTS/etc. filtering, Country
+             only narrows/defaults it, so the two can never disagree. -->
+        <label for="f-country">Country</label>
+        <select id="f-country" onchange="ta.setCountry(this.value)">
           <option value="all">All</option>
           <option value="Russia">Russia</option>
           <option value="Ukraine">Ukraine</option>
         </select>
       </div>
       <div class="filter-group">
-        <!-- Country is the same underlying filter as Region above, kept
-             deliberately in sync -- see dashboard_template.html's matching
-             comment for why (two entry points to one concept, not two
-             independently-combinable filters that could conflict). -->
-        <label for="f-country">Country</label>
-        <select id="f-country" onchange="ta.setRegion(this.value)">
+        <label for="f-region">Region</label>
+        <select id="f-region" onchange="ta.setRegion(this.value)">
           <option value="all">All</option>
           <option value="Russia">Russia</option>
           <option value="Ukraine">Ukraine</option>
@@ -183,6 +184,7 @@ body{font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 
   <div class="active-filters">
     <strong>Active:</strong>
+    <span class="chip" id="chip-country">Country: All</span>
     <span class="chip" id="chip-region">Region: All</span>
     <span class="chip" id="chip-type">Event type: All</span>
     <span class="chip" id="chip-dates">1 Jan 2026 – 7 Aug 2026</span>
@@ -276,6 +278,10 @@ const TYPE_LIST = ["Battles","Explosions/Remote violence","Violence against civi
 const TYPE_COLORS = {"Battles":"#c33428","Explosions/Remote violence":"#e53d2f","Violence against civilians":"#f1948d","Riots":"#19458d","Protests":"#92b4ec","Strategic developments":"#38b6ab"};
 const REGION_CODE_TO_NAME = {"r0":"Russia","r1":"Ukraine"};
 const REGION_COLORS = {"Russia":"#19458d","Ukraine":"#38b6ab"};
+// Country -> Region cascade -- see dashboard_template.html's identical
+// declaration/comment (same data, same generator function).
+const COUNTRY_LIST = ["Russia","Ukraine"];
+const REGION_TO_COUNTRY = {"Ukraine":"Ukraine","Russia":"Russia"};
 const GRID_COLOR = '#e0e0e0';
 const AXIS_COLOR = '#666d6e';
 const LEGEND_COLOR = '#000000';
@@ -553,7 +559,7 @@ function updateNavLinks(state){
 
 class TrendAnalysis{
   constructor(){
-    this.state={region:'all', type:'all', start:YEAR_START, end:DATE_MAX, granularity:defaultGranularityForSpan(DATE_MIN, DATE_MAX, ['day','week','month','year'])}; // start/end overwritten by applyDefaultDateFilter()
+    this.state={region:'all', country:'all', type:'all', start:YEAR_START, end:DATE_MAX, granularity:defaultGranularityForSpan(DATE_MIN, DATE_MAX, ['day','week','month','year'])}; // start/end overwritten by applyDefaultDateFilter()
     this.lethalityBarChart=null; this.cumulativeChart=null; this.yoyChart=null;
     this.smCharts={};
     this.sortCol='fatalities'; this.sortDir='desc';
@@ -585,6 +591,10 @@ class TrendAnalysis{
     // own defaults; an explicit start/end pair in the URL likewise wins
     // over the "2025-01-01 -> today" default below.
     const q = applyFiltersFromQuery(this.state, 'region', REGION_LIST.concat(['all']), ['day','week','month','year']);
+    // Country isn't a URL param -- derive it from whatever Region the query
+    // string (or the default 'all') resolved to (see
+    // dashboard_template.html's identical init()-time step).
+    this.state.country = this.state.region==='all' ? 'all' : (REGION_TO_COUNTRY[this.state.region] || 'all');
     if(q.start && q.end && ISO_DATE_RE.test(q.start) && ISO_DATE_RE.test(q.end)){
       this.setDateFilterInputs(q.start, q.end);
     } else {
@@ -625,13 +635,29 @@ class TrendAnalysis{
       this.monthInRange(e.month)
     );
   }
-  setRegion(v){ this.state.region=v; this.syncControls(); this.applyFilters(); }
+  // Region does 100% of the actual EVENTS filtering; Country is a
+  // convenience parent on top of it -- see dashboard_template.html's
+  // identical setRegion()/setCountry() comment for the full rationale.
+  setRegion(v){
+    this.state.region=v;
+    this.state.country = v==='all' ? 'all' : (REGION_TO_COUNTRY[v] || this.state.country);
+    this.syncControls(); this.applyFilters();
+  }
+  setCountry(v){
+    this.state.country=v;
+    if(v!=='all'){
+      const regionsInCountry = REGION_LIST.filter(r=>REGION_TO_COUNTRY[r]===v);
+      if(regionsInCountry.length===1){ this.state.region = regionsInCountry[0]; }
+      else if(!regionsInCountry.includes(this.state.region)){ this.state.region = 'all'; }
+    }
+    this.syncControls(); this.applyFilters();
+  }
   toggleRegion(r){ this.setRegion(this.state.region===r ? 'all' : r); }
   setType(v){ this.state.type=v; this.syncControls(); this.applyFilters(); }
   setDates(){ this.state.start=document.getElementById('f-start').value; this.state.end=document.getElementById('f-end').value; this.applyFilters(); }
   reset(){
     const g = defaultGranularityForSpan(DATE_MIN, DATE_MAX, ['day','week','month','year']);
-    this.state={region:'all', type:'all', start:YEAR_START, end:DATE_MAX, granularity:g};
+    this.state={region:'all', country:'all', type:'all', start:YEAR_START, end:DATE_MAX, granularity:g};
     this.applyDefaultDateFilter();
     document.getElementById('f-granularity').value=g;
     document.getElementById('f-metric2').value='fatalities';
@@ -645,12 +671,13 @@ class TrendAnalysis{
   }
   syncControls(){
     document.getElementById('f-region').value=this.state.region;
-    document.getElementById('f-country').value=this.state.region;
+    document.getElementById('f-country').value=this.state.country;
     document.getElementById('f-type').value=this.state.type;
     document.getElementById('f-granularity').value=this.state.granularity;
   }
   applyFilters(){ this.updateChips(); this.renderAll(); updateNavLinks(this.state); }
   updateChips(){
+    document.getElementById('chip-country').textContent='Country: '+this.state.country;
     document.getElementById('chip-region').textContent='Region: '+this.state.region;
     document.getElementById('chip-type').textContent='Event type: '+this.state.type;
     const sd=new Date(this.state.start), ed=new Date(this.state.end);

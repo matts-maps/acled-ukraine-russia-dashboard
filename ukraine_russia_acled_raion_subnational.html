@@ -160,7 +160,7 @@ body{font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
         </select>
       </div>
       <div class="filter-group">
-        <label for="f-country">Oblast</label>
+        <label for="f-country">Admin 1</label>
         <select id="f-country" onchange="sub.setCountry(this.value)">
           <option value="Autonomous Republic of Crimea">Autonomous Republic of Crimea</option>
           <option value="Central Federal District">Central Federal District</option>
@@ -200,6 +200,24 @@ body{font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
         </select>
       </div>
       <div class="filter-group">
+        <!-- New: a genuine dropdown for the raion isolation this page
+             already supported via click (toggleAdmin1(), see chart/map/
+             table onclick handlers below) -- 'all' maps to the existing
+             state.admin1===null "no isolation" value. Options are rebuilt
+             per-oblast by rebuildAdmin2Options(), called everywhere
+             buildSmGrid() already is (state.country change), so it always
+             lists exactly the raions currently on screen. No "All" is
+             needed one level up (Admin 1/Oblast stays a mandatory single
+             selection, unchanged) -- the small-multiples grid's panel count
+             is bounded by one oblast's raion count, which is what keeps it
+             from repeating the same unbounded-panel problem an "All
+             oblasts" option would reintroduce. -->
+        <label for="f-admin2">Admin 2</label>
+        <select id="f-admin2" onchange="sub.setAdmin1(this.value)">
+          <option value="all">All</option>
+        </select>
+      </div>
+      <div class="filter-group">
         <label for="f-type">Event type</label>
         <select id="f-type" onchange="sub.setType(this.value)">
           <option value="all">All</option>
@@ -234,8 +252,8 @@ body{font-family:'Noto Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
   <div class="active-filters">
     <strong>Active:</strong>
     <span class="chip" id="chip-nation">Country: All</span>
-    <span class="chip" id="chip-country">Oblast: --</span>
-    <span class="chip" id="chip-admin1">Raion: All</span>
+    <span class="chip" id="chip-country">Admin 1: --</span>
+    <span class="chip" id="chip-admin1">Admin 2: All</span>
     <span class="chip" id="chip-type">Event type: All</span>
     <span class="chip" id="chip-dates">1 Jan 2026 – 7 Aug 2026</span>
     <span class="chip chip-note">Cumulative-toll chart below always shows full history regardless of the date filter</span>
@@ -635,6 +653,7 @@ class SubnationalAnalysis{
     const q = applyFiltersFromQuery(this.state, 'country', SUBNAT_COUNTRIES, ['month','year']);
     this.initMap();
     this.buildSmGrid();
+    this.rebuildAdmin2Options();
     if(q.start && q.end && ISO_DATE_RE.test(q.start) && ISO_DATE_RE.test(q.end)){
       this.setDateFilterInputs(q.start, q.end);
     } else {
@@ -655,7 +674,16 @@ class SubnationalAnalysis{
     }
     return all.map(u=>u.code);
   }
-  setCountry(v){ this.state.country=v; this.state.admin1=null; this.buildSmGrid(); this.syncControls(); this.applyFilters(); }
+  // Admin 2 (raion) dropdown options, scoped to the currently-selected
+  // Admin 1 (oblast) -- rebuilt everywhere buildSmGrid() already is, so it
+  // always matches whichever oblast's raions are on screen.
+  rebuildAdmin2Options(){
+    const sel = document.getElementById('f-admin2');
+    const units = UNITS_BY_COUNTRY[this.state.country]||[];
+    sel.innerHTML = '<option value="all">All</option>' +
+      units.map(u=>'<option value="'+u.admin1+'">'+u.admin1+'</option>').join('');
+  }
+  setCountry(v){ this.state.country=v; this.state.admin1=null; this.buildSmGrid(); this.rebuildAdmin2Options(); this.syncControls(); this.applyFilters(); }
   // Country (nation) filter -- narrows which oblasts the Oblast selector
   // above offers, then falls back to the first still-valid oblast if the
   // one currently selected no longer belongs to the chosen nation (so the
@@ -679,7 +707,10 @@ class SubnationalAnalysis{
     }
     this.syncControls();
   }
-  toggleAdmin1(name){ this.state.admin1 = (this.state.admin1===name) ? null : name; this.applyFilters(); }
+  toggleAdmin1(name){ this.state.admin1 = (this.state.admin1===name) ? null : name; this.syncControls(); this.applyFilters(); }
+  // Direct (non-toggling) set from the new Admin 2 <select> -- 'all' maps to
+  // the existing "no isolation" null value that toggleAdmin1() already uses.
+  setAdmin1(v){ this.state.admin1 = (v==='all') ? null : v; this.syncControls(); this.applyFilters(); }
   setType(v){ this.state.type=v; this.syncControls(); this.applyFilters(); }
   setGranularity(v){ this.state.granularity=v; this.applyFilters(); }
   setDates(){ this.state.start=document.getElementById('f-start').value; this.state.end=document.getElementById('f-end').value; this.applyFilters(); }
@@ -697,19 +728,21 @@ class SubnationalAnalysis{
     this.buildYoYYearCheckboxes();
     this.rebuildOblastOptions();
     this.buildSmGrid();
+    this.rebuildAdmin2Options();
     this.syncControls(); this.applyFilters();
   }
   syncControls(){
     document.getElementById('f-nation').value=this.state.nation;
     document.getElementById('f-country').value=this.state.country;
+    document.getElementById('f-admin2').value=this.state.admin1||'all';
     document.getElementById('f-type').value=this.state.type;
     document.getElementById('f-granularity').value=this.state.granularity;
   }
   applyFilters(){ this.updateChips(); this.renderAll(); updateNavLinks(this.state); }
   updateChips(){
     document.getElementById('chip-nation').textContent='Country: '+(this.state.nation==='all'?'All':this.state.nation);
-    document.getElementById('chip-country').textContent='Oblast: '+this.state.country;
-    document.getElementById('chip-admin1').textContent='Admin1 unit: '+(this.state.admin1||'All');
+    document.getElementById('chip-country').textContent='Admin 1: '+this.state.country;
+    document.getElementById('chip-admin1').textContent='Admin 2: '+(this.state.admin1||'All');
     document.getElementById('chip-type').textContent='Event type: '+this.state.type;
     const sd=new Date(this.state.start), ed=new Date(this.state.end);
     document.getElementById('chip-dates').textContent = sd.toLocaleDateString('en-GB',{year:'numeric',month:'short',day:'numeric'})+' – '+ed.toLocaleDateString('en-GB',{year:'numeric',month:'short',day:'numeric'});
